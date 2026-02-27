@@ -1,0 +1,41 @@
+{
+  "user": {
+    "name": "radio",
+    "password": "radio",
+    "autoLogin": true
+  },
+
+  "remoteDesktop": {
+    "enable": true,
+    "disableNLA": true
+  },
+
+  "paths": {
+    "documentsSubfolder": "ZelloWatchdog"
+  },
+
+  "applications": {
+    "zelloInstaller": "installers\\ZelloSetup_2_6_0.exe",
+    "pythonInstaller": "installers\\python\\python-3.14.2-x86.exe",
+    "notepadPlusPlus": "installers\\notepad++\\npp.8.9.1.Installer.exe",
+    "nssm": "installers\\nssm-2.24\\win32\\nssm.exe"
+  },
+
+  "service": {
+    "name": "ZelloWatchdog",
+    "pythonExe": "python.exe",
+    "script": "zello_watchdog.py"
+  },
+
+  "power": {
+    "sleep": 0,
+    "hibernate": 0,
+    "displayOffMinutes": 5,
+    "wakeTimers": true
+  },
+
+  "environmentVariables": {
+    "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN_HERE",
+    "TELEGRAM_CHAT_ID": "YOUR_CHAT_ID_HERE"
+  }
+}
