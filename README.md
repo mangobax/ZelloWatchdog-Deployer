@@ -1,6 +1,6 @@
 # ZelloWatchdog Deployer
 
-A portable USB provisioning tool that deploys [ZelloWatchdog](https://github.com/marcoagbarreto/ZelloWatchdog) onto a fresh Windows machine in a single script execution. It installs all prerequisites, configures the system for unattended headless operation, and registers ZelloWatchdog as a Windows service — no manual setup required.
+A portable USB provisioning tool that deploys [ZelloWatchdog](https://github.com/mangobax/ZelloWatchdog) onto a fresh Windows machine in a single script execution. It installs all prerequisites, configures the system for unattended headless operation, and registers ZelloWatchdog as a Windows service — no manual setup required.
 
 ---
 
