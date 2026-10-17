@@ -1,7 +1,7 @@
 {
   "user": {
     "name": "radio",
-    "password": "radio",
+    "password": "",
     "autoLogin": true
   },
 
@@ -11,14 +11,35 @@
   },
 
   "paths": {
-    "documentsSubfolder": "ZelloWatchdog"
+    "documentsSubfolder": "ZelloWatchdog",
+    "installFolder": "zello_watchdog"
   },
 
   "applications": {
     "zelloInstaller": "installers\\ZelloSetup_2_6_0.exe",
-    "pythonInstaller": "installers\\python\\python-3.14.2-amd64.exe",
+    "pythonInstaller": "installers\\python\\python-3.12.10-amd64.exe",
     "notepadPlusPlus": "installers\\notepad++\\npp.8.9.1.Installer.x64.exe",
-    "nssm": "installers\\nssm-2.24\\win64\\nssm.exe"
+    "nssm": "installers\\nssm\\win64\\nssm.exe"
+  },
+
+  "openssh": {
+    "enable": true,
+    "msi": "installers\\OpenSSH-Win64-v10.0.0.0.msi",
+    "firewallProfile": "Private"
+  },
+
+  "support": {
+    "enable": true,
+    "accountName": "support",
+    "passwordFile": "support\\support-password.txt",
+    "publicKeyFile": "support\\support-key.pub"
+  },
+
+  "tailscale": {
+    "enable": true,
+    "installer": "installers\\tailscale-setup-1.86.2.exe",
+    "authKey": "YOUR_TAILSCALE_AUTH_KEY_HERE",
+    "hostname": ""
   },
 
   "service": {

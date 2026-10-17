@@ -1,275 +1,169 @@
 # ZelloWatchdog Deployer
 
-A portable USB provisioning tool that deploys [ZelloWatchdog](https://github.com/mangobax/ZelloWatchdog) onto a fresh Windows machine in a single script execution. It installs all prerequisites, configures the system for unattended headless operation, and registers ZelloWatchdog as a Windows service — no manual setup required.
+A portable USB provisioning tool that deploys [ZelloWatchdog](https://github.com/mangobax/ZelloWatchdog) onto a fresh Windows machine in a single script execution. It installs all prerequisites, configures the system for unattended headless operation, sets up remote access, and registers ZelloWatchdog as a Windows service.
+
+Two scripts do the work:
+
+| Script | Runs on | Purpose |
+|---|---|---|
+| `prepare-usb.ps1` | Your admin PC | Builds the USB: installers, project files, offline pip wheels, support account files, configs, integrity manifest |
+| `START.ps1` | Each radio station | Provisions the machine from the USB |
 
 ---
 
-## What It Does
-
-`START.ps1` performs the following steps automatically:
+## What `START.ps1` does
 
 | Step | Action |
 |---|---|
-| 1 | Sets the local user account password |
+| 1 | Asks for the Windows username (default from config), creates the local administrator account if it does not exist, sets its password |
 | 2 | Enables Remote Desktop and disables NLA |
-| 3 | Installs Zello (silent) |
-| 4 | Installs Python (silent, all users, added to PATH) |
-| 5 | Installs Notepad++ (silent, optional) |
-| 6 | Copies the ZelloWatchdog project to the user's Documents folder |
-| 7 | Installs Python dependencies (`requests`, `psutil`) via pip |
-| 8 | Sets environment variables (Telegram bot token & chat ID) |
-| 9 | Imports Windows Scheduled Tasks (Zello launcher, auto-update, power management) |
-| 10 | Installs NSSM and registers ZelloWatchdog as a Windows service |
-| 11 | Configures power settings (disable sleep/hibernate on AC) |
-| 12 | Enables auto-login for the target user |
+| 3 | Installs the official Win32-OpenSSH MSI and creates an optional support account with an authorized SSH key |
+| 4 | Installs Tailscale and joins the tailnet with an auth key |
+| 5 | Installs Zello (silent) |
+| 6 | Installs Python (silent, all users, added to PATH) |
+| 7 | Installs Notepad++ (silent, optional) |
+| 8 | Copies the ZelloWatchdog project to the user's Documents folder |
+| 9 | Installs `requests` and `psutil` with pip (offline from the USB wheels when present) |
+| 10 | Sets environment variables (Telegram bot token & chat ID) |
+| 11 | Imports Windows Scheduled Tasks (Zello launcher, auto-update, power management) |
+| 12 | Installs NSSM and registers ZelloWatchdog as a Windows service |
+| 13 | Configures power settings (disable sleep/hibernate on AC) |
+| 14 | Enables auto-login for the target user |
 
-The script auto-detects whether the OS is **x64** or **x86** and loads the corresponding config file.
+The station name used in alerts is the Windows computer name; the script does not rename the machine.
+
+The script auto-detects whether the OS is **x64** or **x86** and loads `config_x64.json` or `config_x86.json`.
 
 ---
 
 ## Prerequisites
 
-- **Windows 10/11** (x64 or x86)
-- A local user account must already exist on the target machine (the script sets its password, it does not create the account)
+- **Windows 10 or later** (x64 or x86). Windows 10 builds older than 2004 are supported because OpenSSH comes from the official MSI instead of the Windows capability.
+- On your admin PC: PowerShell 5.1+, internet access, Python (any version, only used to download pip wheels), and an SSH key pair if you want remote support (`ssh-keygen -t ed25519`).
+- A Tailscale **auth key** (create it in the Tailscale admin console; reusable and tagged is recommended).
+- A Telegram bot token and chat ID for alerts.
 
 ---
 
-## USB Drive Setup
+## Building the USB
 
-### Step 1: Clone this repository
+### Step 1: Download the installers
+
+Put these files in one folder on your admin PC (subfolders are fine; the script searches recursively):
+
+| Installer | Where to get it | Expected name pattern |
+|---|---|---|
+| Zello Desktop | [zello.com](https://zello.com/) | `ZelloSetup_*.exe` |
+| Python 3.12 (x64 and x86) | [python.org](https://www.python.org/downloads/) | `python-3.12.*-amd64.exe`, `python-3.12.*.exe` |
+| NSSM 2.24 | [nssm.cc](https://nssm.cc/download) | `...\win64\nssm.exe`, `...\win32\nssm.exe` |
+| Win32-OpenSSH MSI (x64 and x86) | [Win32-OpenSSH releases](https://github.com/PowerShell/Win32-OpenSSH/releases) | `OpenSSH-Win64-*.msi`, `OpenSSH-Win32-*.msi` |
+| Tailscale | [tailscale.com](https://tailscale.com/download/windows) | `tailscale-setup-*.exe` |
+| Notepad++ (optional) | [notepad-plus-plus.org](https://notepad-plus-plus.org/downloads/) | `npp.*.Installer.x64.exe`, `npp.*.Installer.exe` |
+
+Every installer except NSSM (which is unsigned) must carry a valid Authenticode signature; `prepare-usb.ps1` refuses anything else unless you pass `-Force`.
+
+### Step 2: Run `prepare-usb.ps1`
 
 ```powershell
 git clone https://github.com/mangobax/ZelloWatchdog-Deployer.git
+cd ZelloWatchdog-Deployer
+.\prepare-usb.ps1 -UsbPath D:\ -InstallersDir "C:\path\to\installers"
 ```
 
-### Step 2: Download the ZelloWatchdog project
+It will:
 
-Download or clone the [ZelloWatchdog](https://github.com/mangobax/ZelloWatchdog) repository and place its contents inside the `ZelloWatchdog/` folder:
+1. Validate the target (removable drive, free space) and the installers' signatures.
+2. Copy the installers into the layout `START.ps1` expects.
+3. Download the ZelloWatchdog project (`main` branch) and copy the needed files and task XMLs.
+4. Download pip wheels for x64 and x86.
+5. Create `support\` with the support account password (generated, or reused from `-SupportPasswordFile`) and your SSH public key.
+6. Ask, at hidden prompts, for the Telegram token and chat ID, the Windows password for the radio account, and the Tailscale auth key, and write them into the configs **on the USB only**.
+7. Write `manifest.sha256.json` so `START.ps1` can detect a corrupted or altered installer.
 
-```powershell
-git clone https://github.com/mangobax/ZelloWatchdog.git zello_watchdog_repo
+Useful parameters: `-PythonSeries`, `-SupportAccount`, `-SupportPasswordFile`, `-RotateSupportPassword`, `-PublicKeyPath`, `-RadioUserName`, `-SkipWheels`, `-SkipProjectDownload`, `-NoPrompt`, `-Force`. Run `Get-Help .\prepare-usb.ps1 -Full` for details.
+
+### Resulting USB layout
+
 ```
-
-Copy the required files:
-
-```powershell
-Copy-Item zello_watchdog_repo\zello_watchdog.py   ZelloWatchdog\
-Copy-Item zello_watchdog_repo\updater.py           ZelloWatchdog\
-Copy-Item zello_watchdog_repo\config.ini           ZelloWatchdog\
-Copy-Item zello_watchdog_repo\version.txt          ZelloWatchdog\
-Copy-Item zello_watchdog_repo\auto_update.enabled  ZelloWatchdog\
-Copy-Item zello_watchdog_repo\requirements_x64.txt ZelloWatchdog\
-Copy-Item zello_watchdog_repo\requirements_x86.txt ZelloWatchdog\
+D:\
+├── START.ps1
+├── config_x64.json            ← generated, contains secrets
+├── config_x86.json            ← generated, contains secrets
+├── manifest.sha256.json
+├── scripts\
+│   ├── Install-OpenSsh.ps1
+│   ├── New-SupportAccount.ps1
+│   └── Install-Tailscale.ps1
+├── installers\                ← Zello, Python, NSSM, OpenSSH, Tailscale, Notepad++
+├── wheels\x64, wheels\x86     ← offline pip packages
+├── ZelloWatchdog\             ← project files
+├── tasks\                     ← scheduled task XMLs
+├── support\                   ← support password + public key (sensitive)
+└── logs\                      ← created on the stations
 ```
-
-### Step 3: Download the scheduled task XMLs
-
-From the same ZelloWatchdog repository, copy the task XML files into the `tasks/` folder:
-
-```powershell
-Copy-Item zello_watchdog_repo\tasks\*.xml tasks\
-```
-
-You should have these four files:
-
-- `[Radio] Application - LaunchZelloGUI.xml`
-- `[Radio] Application - AutoUpdate.xml`
-- `[Radio] Power Management - Scheduled Sleep.xml`
-- `[Radio] Power Management - Scheduled Wake.xml`
-
-### Step 4: Download the installers
-
-Place the following installers inside the `installers/` folder. The script expects the exact subfolder structure shown below — update the paths in `config_x64.json` / `config_x86.json` if your filenames differ.
-
-| Installer | Download Link | Destination |
-|---|---|---|
-| **Zello Desktop v2.6** | [zello.com](https://zello.com/) | `installers\ZelloSetup_2_6_0.exe` |
-| **Python 3.12+** (x64) | [python.org](https://www.python.org/downloads/) | `installers\python\python-3.x.x-amd64.exe` |
-| **Python 3.12+** (x86) | [python.org](https://www.python.org/downloads/) | `installers\python\python-3.x.x-x86.exe` |
-| **NSSM 2.24** | [nssm.cc](https://nssm.cc/download) | `installers\nssm-2.24\win64\nssm.exe` and `installers\nssm-2.24\win32\nssm.exe` |
-| **Notepad++** (optional) | [notepad-plus-plus.org](https://notepad-plus-plus.org/downloads/) | `installers\notepad++\npp.x.x.x.Installer.x64.exe` and/or `npp.x.x.x.Installer.exe` |
-
-> **Note:** If you use different installer versions or filenames, update the `applications` section in both config JSON files to match.
-
-### Step 5: Edit the config files
-
-Edit `config_x64.json` and `config_x86.json` to match your environment:
-
-```jsonc
-{
-  "user": {
-    "name": "radio",              // Local Windows username
-    "password": "radio",          // Password to set for that user
-    "autoLogin": true             // Enable automatic login on boot
-  },
-  "environmentVariables": {
-    "TELEGRAM_BOT_TOKEN": "...",  // Your Telegram bot token
-    "TELEGRAM_CHAT_ID": "..."    // Your Telegram chat ID
-  }
-}
-```
-
-See the [Configuration Reference](#configuration-reference) below for all available options.
 
 ---
 
-## Required Folder Structure
+## Using the USB on a station
 
-After completing all steps above, your deployer folder should look like this:
+1. Plug the USB into the target Windows machine.
+2. Right-click `START.ps1` → **Run with PowerShell** (it self-elevates; a UAC prompt appears).
+3. Enter the Windows username when asked (or run `.\START.ps1 -UserName radio`).
 
-```
-ZelloWatchdog Deployer/
-│
-├── START.ps1                          ← Provisioning script (run this)
-├── config_x64.json                    ← Config for 64-bit Windows
-├── config_x86.json                    ← Config for 32-bit Windows
-│
-├── installers/                        ← ⬇ Download these yourself
-│   ├── ZelloSetup_2_6_0.exe
-│   ├── python/
-│   │   ├── python-3.x.x-amd64.exe
-│   │   └── python-3.x.x-x86.exe
-│   ├── nssm-2.24/
-│   │   ├── win64/
-│   │   │   └── nssm.exe
-│   │   └── win32/
-│   │       └── nssm.exe
-│   └── notepad++/                     ← Optional
-│       ├── npp.x.x.x.Installer.x64.exe
-│       └── npp.x.x.x.Installer.exe
-│
-├── tasks/                             ← ⬇ From ZelloWatchdog repo
-│   ├── [Radio] Application - AutoUpdate.xml
-│   ├── [Radio] Application - LaunchZelloGUI.xml
-│   ├── [Radio] Power Management - Scheduled Sleep.xml
-│   └── [Radio] Power Management - Scheduled Wake.xml
-│
-├── ZelloWatchdog/                     ← ⬇ From ZelloWatchdog repo
-│   ├── zello_watchdog.py
-│   ├── updater.py
-│   ├── config.ini
-│   ├── version.txt
-│   ├── auto_update.enabled
-│   ├── requirements_x64.txt
-│   └── requirements_x86.txt
-│
-└── logs/                              ← Created automatically
-    └── provision-YYYYMMDD-HHmmss.log
-```
+The script writes a transcript to `logs\`. After it finishes:
 
-> Items marked **⬇** are not included in this repository and must be obtained separately.
+1. **Open Zello**, log in, and close it (this creates the WAL database file the watchdog monitors).
+2. **Start the service:** `nssm start ZelloWatchdog`
+3. **Reboot** to verify auto-login and service auto-start.
 
 ---
 
-## Usage
+## Configuration reference
 
-1. Copy the entire deployer folder onto a USB flash drive
-2. Plug the USB into the target Windows machine
-3. Right-click `START.ps1` → **"Run with PowerShell"**
-
-The script will:
-- Self-elevate to Administrator (UAC prompt)
-- Auto-detect x64/x86 and load the correct config
-- Execute all 12 provisioning steps
-- Write a transcript log to `logs/`
-
-After the script completes:
-
-1. **Open Zello**, log in to your account, and close it (this creates the WAL database file the watchdog monitors)
-2. **Start the service:**
-   ```powershell
-   nssm start ZelloWatchdog
-   ```
-3. **Reboot** to verify auto-login and service auto-start work correctly
-
----
-
-## Configuration Reference
-
-Both `config_x64.json` and `config_x86.json` share the same schema. The only differences are the installer paths (pointing to the correct architecture).
+`config_x64.json` and `config_x86.json` share one schema; they differ only in the installer paths. The repository copies are templates with placeholders; `prepare-usb.ps1` writes the real ones to the USB.
 
 | Section | Key | Description |
 |---|---|---|
-| `user` | `name` | Local Windows username to configure |
-| `user` | `password` | Password to set for that account |
-| `user` | `autoLogin` | `true` to enable auto-login on boot (plaintext password stored in registry) |
-| `remoteDesktop` | `enable` | `true` to enable Remote Desktop |
-| `remoteDesktop` | `disableNLA` | `true` to disable Network Level Authentication (for older RDP clients) |
-| `paths` | `documentsSubfolder` | Subfolder name under `C:\Users\<user>\Documents\` where the watchdog is installed |
-| `applications` | `zelloInstaller` | Relative path to the Zello installer |
-| `applications` | `pythonInstaller` | Relative path to the Python installer |
-| `applications` | `notepadPlusPlus` | Relative path to the Notepad++ installer (optional — remove this key to skip) |
-| `applications` | `nssm` | Relative path to `nssm.exe` |
-| `service` | `name` | Windows service name (`ZelloWatchdog`) |
-| `service` | `pythonExe` | Python executable name or path (resolved via PATH after install) |
-| `service` | `script` | Filename of the watchdog script inside the project folder |
-| `power` | `sleep` | AC standby timeout in minutes (`0` = never) |
-| `power` | `hibernate` | AC hibernate timeout in minutes (`0` = never) |
-| `power` | `displayOffMinutes` | Turn off display after N minutes on AC |
-| `environmentVariables` | `TELEGRAM_BOT_TOKEN` | Telegram bot token (set as system-wide env var) |
-| `environmentVariables` | `TELEGRAM_CHAT_ID` | Telegram chat ID (set as system-wide env var) |
+| `user` | `name` | Default Windows username offered by `START.ps1` |
+| `user` | `password` | Password for that account. Empty = `START.ps1` asks for it |
+| `user` | `autoLogin` | `true` to enable auto-login (plaintext password in the registry) |
+| `remoteDesktop` | `enable` / `disableNLA` | Enable RDP / disable Network Level Authentication |
+| `paths` | `documentsSubfolder` | Folder on the USB holding the project |
+| `paths` | `installFolder` | Folder under `C:\Users\<user>\Documents\` where it is installed |
+| `applications` | `zelloInstaller`, `pythonInstaller`, `notepadPlusPlus`, `nssm` | Relative installer paths (remove `notepadPlusPlus` to skip) |
+| `openssh` | `enable`, `msi`, `firewallProfile` | OpenSSH MSI and the network profile its firewall rule stays on (`Private` by default) |
+| `support` | `enable`, `accountName`, `passwordFile`, `publicKeyFile` | Support administrator account and the files that feed it |
+| `tailscale` | `enable`, `installer`, `authKey`, `hostname` | Tailscale install and join (hostname defaults to the computer name) |
+| `service` | `name`, `pythonExe`, `script` | NSSM service definition |
+| `power` | `sleep`, `hibernate`, `displayOffMinutes` | AC timeouts in minutes (`0` = never) |
+| `environmentVariables` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Set as system-wide environment variables |
 
 ---
 
-## Provisioning Steps Detail
+## Notes on the steps
 
-### Step 1 — Set Local Account Password
-Sets the password for the local user account specified in the config. The account must already exist.
-
-### Step 2 — Remote Desktop
-Enables RDP and opens the firewall rule. Optionally disables NLA for compatibility with older clients.
-
-### Step 3 — Install Zello
-Runs the Zello installer in silent mode (`/S`).
-
-### Step 4 — Install Python
-Runs the Python installer in silent mode with `InstallAllUsers=1` and `PrependPath=1`. Refreshes `PATH` in the current session so `pip` is immediately available.
-
-### Step 5 — Install Notepad++ (optional)
-If `notepadPlusPlus` is defined in the config, installs it silently. Otherwise skips.
-
-### Step 6 — Copy ZelloWatchdog Project
-Copies the `ZelloWatchdog/` folder to `C:\Users\<user>\Documents\ZelloWatchdog\`.
-
-### Step 7 — Install Python Dependencies
-Runs `pip install -r requirements_x64.txt` (or `x86`) to install `requests` and `psutil`.
-
-### Step 8 — Environment Variables
-Sets `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as system-wide environment variables.
-
-### Step 9 — Import Scheduled Tasks
-Imports all `.xml` files from the `tasks/` folder into Windows Task Scheduler. Automatically replaces the `<UserId>` in each XML with the resolved SID of the target user, so the tasks work regardless of machine name. The AutoUpdate task paths are patched to match the actual install location.
-
-### Step 10 — Install NSSM + Create Service
-Copies `nssm.exe` to `System32`, creates the `ZelloWatchdog` service pointing to `python.exe zello_watchdog.py`, and configures auto-start and restart-on-failure. The service is installed but **not started** — start it after Zello's first-run setup.
-
-### Step 11 — Power Configuration
-Disables sleep and hibernate on AC power. Sets the display-off timeout. Prevents idle standby.
-
-### Step 12 — Auto-Login
-Configures Windows to automatically log in as the target user on boot (via Winlogon registry keys). Required for Zello to run in an interactive GUI session on headless machines.
+- **Local account:** the account becomes a local administrator because the auto-update task must stop and start the service.
+- **Scheduled tasks:** the XML files use `InteractiveToken` (no stored password), so they run while the user is logged on, which auto-login guarantees. The `UserId` is replaced with the resolved SID of the target user, the update task paths are patched to the real install folder, and the Zello launcher path is detected (Zello installs under `Program Files (x86)` only on 64-bit Windows).
+- **OpenSSH:** the official MSI is used on every build. Authorized keys go to `C:\ProgramData\ssh\administrators_authorized_keys` with a locked-down ACL.
+- **Tailscale:** the auth key is passed through an environment variable and masked in the transcript.
+- **Offline pip:** `START.ps1` uses `pip --no-index --find-links wheels\<arch>` when the wheels exist and falls back to the internet otherwise.
+- **Integrity:** if `manifest.sha256.json` is present, every installer is checked against it before it runs.
 
 ---
 
 ## Logs
 
-Every run creates a timestamped transcript in the `logs/` folder:
-
-```
-logs/provision-20260226-190000.log
-```
-
-Review this file if anything goes wrong during provisioning.
+Every run creates a timestamped transcript in `logs\` (for example `provision-20260226-190000.log`); the support-account step appends to `logs\support-accounts.csv` (no passwords). Review them if anything goes wrong.
 
 ---
 
-## Security Notes
+## Security notes
 
-- **Passwords** in `config_x64.json` / `config_x86.json` are stored in **plaintext**. Do not commit these files with real credentials to a public repository.
-- **Auto-login** stores the password in the Windows registry in plaintext. This is acceptable for dedicated kiosk/radio machines on a private network.
-- **Telegram credentials** are set as system-wide environment variables. They are visible to any process on the machine.
-
-> **Recommendation:** Update the config files with real credentials only on the USB drive itself. Keep the repository copies with placeholder values.
+- The generated configs, `support\support-password.txt`, the Telegram token and the Tailscale key all live on the USB in **plaintext**. Treat the USB as sensitive: keep it supervised, consider BitLocker To Go, and wipe the `support\` folder and configs when the deployment round ends.
+- **Never commit** the generated configs or the `support\` folder. The repository `.gitignore` excludes the USB artifacts.
+- **Auto-login** stores the account password in the registry in plaintext. That is acceptable for dedicated radio machines in controlled locations.
+- The Telegram credentials are system-wide environment variables, visible to any process on the machine.
+- The OpenSSH firewall rule defaults to the `Private` profile. Widen it (`openssh.firewallProfile`) only on trusted networks.
 
 ---
 

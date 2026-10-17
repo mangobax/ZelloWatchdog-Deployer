@@ -1,0 +1,10 @@
+# USB artifacts: installers, secrets and generated files must never be committed
+installers/
+wheels/
+support/
+ZelloWatchdog/
+tasks/
+logs/
+manifest.sha256.json
+*.log
+__pycache__/
