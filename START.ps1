@@ -574,6 +574,18 @@ try {
     powercfg /change hibernate-timeout-ac $Config.power.hibernate
     powercfg /change monitor-timeout-ac $Config.power.displayOffMinutes
     powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP STANDBYIDLE 0
+
+    # The Scheduled Sleep / Scheduled Wake tasks need hibernate available (shutdown /h),
+    # wake timers allowed (on AC and battery), and Sleep/Hibernate shown in the power menu.
+    powercfg /hibernate on
+    if (Get-Cfg $Config.power "wakeTimers" $true) {
+        powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP RTCWAKE 1
+        powercfg /setdcvalueindex SCHEME_CURRENT SUB_SLEEP RTCWAKE 1
+    }
+    $flyout = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FlyoutMenuSettings"
+    if (-not (Test-Path $flyout)) { New-Item -Path $flyout -Force | Out-Null }
+    Set-ItemProperty $flyout "ShowSleepOption" 1 -Type DWord
+    Set-ItemProperty $flyout "ShowHibernateOption" 1 -Type DWord
     powercfg /setactive SCHEME_CURRENT
 
     Write-Host "Power settings configured (sleep=$($Config.power.sleep), hibernate=$($Config.power.hibernate), display=$($Config.power.displayOffMinutes)min)"
@@ -610,7 +622,7 @@ $PlainPassword = $null
 Write-Host "`n--- Step 15: Desktop shortcuts ---" -ForegroundColor Yellow
 
 try {
-    & (Join-Path $Root "scripts\New-Shortcuts.ps1") -User $TargetUser -InstallDir $Dest -ServiceName $ServiceName
+    & (Join-Path $Root "scripts\New-Shortcuts.ps1") -User $TargetUser -InstallDir $Dest -ServiceName $ServiceName -ZelloExe $ZelloExe
 } catch {
     Write-Warning "Failed to create desktop shortcuts: $_"
 }

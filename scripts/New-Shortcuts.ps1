@@ -9,6 +9,8 @@
       Stop_Zellowatchdog    stops the service (asks for administrator rights)
       zello_watchdog        opens the install folder
       ZelloDesktop          opens the Zello data folder (%APPDATA%\ZelloDesktop)
+    and, when -ZelloExe is given, a Zello shortcut in the user's Startup folder
+    (same as pasting it into shell:startup) so Zello starts at logon.
     Safe to run again: existing shortcuts are overwritten.
 
 .PARAMETER User
@@ -16,11 +18,15 @@
 
 .PARAMETER InstallDir
     ZelloWatchdog install folder.
+
+.PARAMETER ZelloExe
+    Full path of Zello.exe. If set, a Startup-folder shortcut is created.
 #>
 param(
     [Parameter(Mandatory)][string]$User,
     [Parameter(Mandatory)][string]$InstallDir,
-    [string]$ServiceName = 'ZelloWatchdog'
+    [string]$ServiceName = 'ZelloWatchdog',
+    [string]$ZelloExe = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,3 +65,16 @@ New-Shortcut 'Start_Zellowatchdog' (Join-Path $InstallDir 'Start_Zellowatchdog.b
 New-Shortcut 'Stop_Zellowatchdog'  (Join-Path $InstallDir 'Stop_Zellowatchdog.bat')  $InstallDir -RunAsAdmin
 New-Shortcut 'zello_watchdog'      $InstallDir ''
 New-Shortcut 'ZelloDesktop'        (Join-Path $profileDir 'AppData\Roaming\ZelloDesktop') ''
+
+# Zello at logon: shortcut in the Startup folder (what shell:startup opens)
+if ($ZelloExe -and (Test-Path -LiteralPath $ZelloExe)) {
+    $startup = Join-Path $profileDir 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'
+    if (-not (Test-Path -LiteralPath $startup)) { New-Item -ItemType Directory -Path $startup -Force | Out-Null }
+    $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $startup 'Zello.lnk'))
+    $lnk.TargetPath = $ZelloExe
+    $lnk.WorkingDirectory = Split-Path -Parent $ZelloExe
+    $lnk.Save()
+    Write-Host "  Startup shortcut: $(Join-Path $startup 'Zello.lnk')"
+} else {
+    Write-Warning 'Zello.exe not found: no Startup shortcut created.'
+}
