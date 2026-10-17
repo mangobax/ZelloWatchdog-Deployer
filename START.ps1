@@ -550,7 +550,7 @@ try {
     # The service runs as LocalSystem, whose %APPDATA% is the systemprofile: the watchdog would not
     # find Zello's data folder. Point it at the radio user's profile.
     $UserProfile = "C:\Users\$TargetUser"
-    nssm set $ServiceName AppEnvironmentExtra "APPDATA=$UserProfile\AppData\Roaming" "LOCALAPPDATA=$UserProfile\AppData\Local" "USERPROFILE=$UserProfile"
+    nssm set $ServiceName AppEnvironmentExtra "APPDATA=$UserProfile\AppData\Roaming" "LOCALAPPDATA=$UserProfile\AppData\Local" "USERPROFILE=$UserProfile" "PYTHONIOENCODING=utf-8"
     nssm set $ServiceName AppRestartDelay 5000
     nssm set $ServiceName AppStopMethodSkip 6
     nssm set $ServiceName AppExit Default Restart
